@@ -1,6 +1,7 @@
 (ns srt-extractor.core
   (:require [clojure.data.xml :refer :all]))
 
+(def encoding "ISO-8859-15")
 (def language "spanish")
 #_(def frame-rate 23.976)
 (def frame-rate 24)
@@ -96,20 +97,24 @@
     (remove (fn [t] (= "0" (:enabled t))) (mapcat #(title-processed % 0) titles))))
 
 (defn write-plain! [output-file ts]
-  (spit output-file "" :append false)
+  (spit output-file "" :append false :encoding encoding)
   (dorun (map #(spit output-file (str (timecode (:start %)) " "
                                       (timecode (:end %)) " "
-                                      (:text %) "\n") :append true)
+                                      (:text %) "\n")
+                     :append true
+                     :encoding encoding)
               ts)))
 
 (defn write-srt! [output-file ts]
-  (spit output-file "" :append false)
+  (spit output-file "" :append false :encoding encoding)
   (dorun (map-indexed
           (fn [idx t]
             (spit output-file (str (inc idx) "\n"
                                    (srt-timecode (:start t)) " --> "
                                    (srt-timecode (:end t)) "\n"
-                                   (:text t) "\n\n") :append true))
+                                   (:text t) "\n\n")
+                  :append true
+                  :encoding encoding))
           ts)))
 
 #_(write-plain! output-file)
@@ -124,7 +129,14 @@
               :end (:end (:target choice))})))
 
 (defn synchronized [sync to-sync]
-  (map #(find-closer % sync) to-sync))
+  (let [base (map #(find-closer % sync) to-sync)
+        grouped (vals (group-by #(str (:start %) (:end %)) base))
+        unsorted (map (fn [ms]
+                        (merge (first ms)
+                               {:text (clojure.string/join
+                                       "\n" (map :text ms))}))
+                      grouped)]
+    (sort-by :start unsorted)))
 
 (defn test []
   (write-plain! (output-file "english")
@@ -162,3 +174,23 @@
 
   (write-srt! (output-srt "spanish")
               (xml->titles (file "spanish"))))
+
+(defn test-nosyncro []
+  (write-plain! (output-file "german")
+                (xml->titles (file "german")))
+  (write-srt! (output-srt "german")
+              (xml->titles (file "german")))
+  (write-plain! (output-file "english")
+                (xml->titles (file "english")))
+  (write-srt! (output-srt "english")
+              (xml->titles (file "english")))
+  (write-plain! (output-file "german-extended")
+                (xml->titles (file "german-extended")))
+  (write-srt! (output-srt "german-extended")
+              (xml->titles (file "german-extended")))
+  (write-plain! (output-file "spanish")
+                (xml->titles (file "spanish")))
+  (write-srt! (output-srt "spanish")
+              (xml->titles (file "spanish"))))
+
+#_(test-nosyncro)
