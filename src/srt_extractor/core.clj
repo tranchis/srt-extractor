@@ -2,12 +2,20 @@
   (:require [clojure.data.xml :refer :all]))
 
 (def language "spanish")
-(def output-file (str "/Users/sergio/Desktop/" language ".txt"))
-(def output-srt (str "/Users/sergio/Desktop/" language ".srt"))
-(def file (str "/Users/sergio/Desktop/" language " subts dvd Clip.fcpxml"))
 #_(def frame-rate 23.976)
 (def frame-rate 24)
-(def base-rate 1000/1001)
+#_(def base-rate 1000/1001)
+(def base-rate 1000/1000)
+
+
+(defn output-file [language]
+  (str "/Users/sergio/Desktop/" language ".txt"))
+
+(defn output-srt [language]
+  (str "/Users/sergio/Desktop/" language ".srt"))
+
+(defn file [language]
+  (str "/Users/sergio/Desktop/" language " subts dvd Clip.fcpxml"))
 
 (defn number-to-string [n]
   (if (< n 10)
@@ -72,7 +80,7 @@
                :end (- (+ offset duration) initial-offset)}]
              tc-children))))
 
-(defn xml->titles []
+(defn xml->titles [file]
   (let [input-xml (java.io.FileReader. (java.io.File. file))
         xml (parse input-xml)
         content (:content xml)
@@ -87,27 +95,70 @@
         titles timeline #_(filter #(= (:tag %) :title) timeline)]
     (remove (fn [t] (= "0" (:enabled t))) (mapcat #(title-processed % 0) titles))))
 
-(defn write-plain! [output-file]
-  (let [ts (xml->titles)]
-    (spit output-file "" :append false)
-    (dorun (map #(spit output-file (str (timecode (:start %)) " "
-                                        (timecode (:end %)) " "
-                                        (:text %) "\n") :append true)
-                ts))))
+(defn write-plain! [output-file ts]
+  (spit output-file "" :append false)
+  (dorun (map #(spit output-file (str (timecode (:start %)) " "
+                                      (timecode (:end %)) " "
+                                      (:text %) "\n") :append true)
+              ts)))
 
-(defn write-srt! [output-file]
-  (let [ts (xml->titles)]
-    (spit output-file "" :append false)
-    (dorun (map-indexed
-            (fn [idx t]
-              (spit output-file (str (inc idx) "\n"
-                                     (srt-timecode (:start t)) " --> "
-                                     (srt-timecode (:end t)) "\n"
-                                     (:text t) "\n\n") :append true))
-            ts))))
+(defn write-srt! [output-file ts]
+  (spit output-file "" :append false)
+  (dorun (map-indexed
+          (fn [idx t]
+            (spit output-file (str (inc idx) "\n"
+                                   (srt-timecode (:start t)) " --> "
+                                   (srt-timecode (:end t)) "\n"
+                                   (:text t) "\n\n") :append true))
+          ts)))
 
-(write-plain! output-file)
-(write-srt! output-srt)
+#_(write-plain! output-file)
+#_(write-srt! output-srt)
 
-#_(xml->titles)
- 
+(defn find-closer [t sync]
+  (let [diffs (map #(hash-map :diff (+ (Math/abs (- (:start %) (:start t)))
+                                       (Math/abs (- (:end %) (:end t))))
+                              :target %) sync)
+        choice (first (sort-by :diff diffs))]
+    (merge t {:start (:start (:target choice))
+              :end (:end (:target choice))})))
+
+(defn synchronized [sync to-sync]
+  (map #(find-closer % sync) to-sync))
+
+(defn test []
+  (write-plain! (output-file "english")
+                (synchronized
+                 (xml->titles (file "spanish"))
+                 (xml->titles (file "english"))))
+
+  (write-srt! (output-srt "english")
+              (synchronized
+               (xml->titles (file "spanish"))
+               (xml->titles (file "english"))))
+
+  (write-plain! (output-file "german")
+                (synchronized
+                 (xml->titles (file "spanish"))
+                 (xml->titles (file "german"))))
+
+  (write-srt! (output-srt "german")
+              (synchronized
+               (xml->titles (file "spanish"))
+               (xml->titles (file "german"))))
+
+  (write-plain! (output-file "german-extended")
+                (synchronized
+                 (xml->titles (file "spanish"))
+                 (xml->titles (file "german-extended"))))
+
+  (write-srt! (output-srt "german-extended")
+              (synchronized
+               (xml->titles (file "spanish"))
+               (xml->titles (file "german-extended"))))
+
+  (write-plain! (output-file "spanish")
+                (xml->titles (file "spanish")))
+
+  (write-srt! (output-srt "spanish")
+              (xml->titles (file "spanish"))))
